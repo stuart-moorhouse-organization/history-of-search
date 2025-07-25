@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+venv/
+env/
+.env
+.env.local
+.env.*.local
+
+# Claude Code specific files (not part of project)
+CLAUDE.md
+product-requirement-prompts.md
+.claude/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+build/
+*.pyc
+__pycache__/
+*.egg-info/
+
+# Testing
+coverage/
+.coverage
+.pytest_cache/
+*.cover
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
