@@ -26,7 +26,7 @@ claude-code-template/
 ├── src/                       # Your source code
 ├── tests/                     # Your test files
 ├── docs/                      # Documentation
-├── .gitignore                 # Git ignore rules
+├── .gitignore.template        # Rename this to .gitignore for your project
 ├── pre-commit-config.yaml     # Pre-commit framework config
 ├── pyproject.toml             # Python project configuration
 ├── CLAUDE.md                  # Instructions for Claude
@@ -90,8 +90,13 @@ The `.github/workflows/security.yml` file provides:
    uv pip install -e ".[dev]"
    pre-commit install
    ```
-5. **Start Claude Code**: `claude`
-6. **Initialize your project**: Use `/init` to generate initial code based on your requirements
+5. **Rename .gitignore.template to .gitignore**:
+   ```bash
+   mv .gitignore.template .gitignore
+   ```
+   This ensures Claude-specific files stay out of your project repository
+6. **Start Claude Code**: `claude`
+7. **Initialize your project**: Use `/init` to generate initial code based on your requirements
 
 ### 🔒 Security Features Explained
 
