@@ -364,13 +364,15 @@
     </style>
 </head>
 <body>
+    <script src="{{ url_for('static', filename='semantic-search.js') }}" defer></script>
     <div class="container">
         <h1>History of Search</h1>
         
         <div class="tab-container">
             <div class="tab-buttons">
                 <button class="tab-button active" onclick="openTab(event, 'term-based')">Term-Based Search</button>
-                <button class="tab-button" onclick="openTab(event, 'semantic')">Semantic Search</button>
+                <button class="tab-button" onclick="openTab(event, 'semantic-sparse')">Semantic Search (sparse vector)</button>
+                <button class="tab-button" onclick="openTab(event, 'semantic-dense')">Semantic Search (dense vector)</button>
                 <button class="tab-button" onclick="openTab(event, 'hybrid')">Hybrid Search</button>
                 <button class="tab-button" onclick="openTab(event, 'chat')">Chat</button>
             </div>
@@ -405,28 +407,92 @@
                 </div>
             </div>
 
-            <div id="semantic" class="tab-content">
-                <div class="search-container">
-                    <div class="description">
-                        Advanced search understanding context and meaning
+            <div id="semantic-sparse" class="tab-content">
+                <button class="code-toggle-btn" id="semantic-sparse-code-toggle" onclick="toggleSemanticSparseCodeView()">&lt;code&gt;</button>
+                <div class="description">
+                    Semantic search using ELSER sparse vectors to understand meaning and context
+                </div>
+                <div class="search-with-facets">
+                    <div class="facets-sidebar">
+                        <div class="facets-title">Filter by Play</div>
+                        <div class="facet-group" id="semantic-sparse-play-facets">
+                            <div class="loading">Loading plays...</div>
+                        </div>
                     </div>
-                    <input type="text" class="search-box" placeholder="Ask a question or describe what you're looking for...">
-                    <button class="search-button">Search</button>
-                    <div class="results-area">
-                        <p>Semantic search results will appear here...</p>
+                    <div class="search-content">
+                        <input type="text" class="search-box" id="semantic-sparse-search-box" placeholder="Describe what you're looking for...">
+                        <button class="search-button" id="semantic-sparse-search-btn">Search</button>
+                        <div class="code-display" id="semantic-sparse-code-display">
+                            <div class="code-section">
+                                <div class="code-title">Elasticsearch Sparse Vector Query (ELSER)</div>
+                                <div class="code-content" id="semantic-sparse-es-query-display">
+                                    <em>Execute a search to see the Elasticsearch sparse vector query</em>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="results-area" id="semantic-sparse-results">
+                            <p>Sparse vector semantic search results will appear here...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="semantic-dense" class="tab-content">
+                <button class="code-toggle-btn" id="semantic-dense-code-toggle" onclick="toggleSemanticDenseCodeView()">&lt;code&gt;</button>
+                <div class="description">
+                    Semantic search using E5 multilingual dense vectors for cross-lingual understanding
+                </div>
+                <div class="search-with-facets">
+                    <div class="facets-sidebar">
+                        <div class="facets-title">Filter by Play</div>
+                        <div class="facet-group" id="semantic-dense-play-facets">
+                            <div class="loading">Loading plays...</div>
+                        </div>
+                    </div>
+                    <div class="search-content">
+                        <input type="text" class="search-box" id="semantic-dense-search-box" placeholder="Describe what you're looking for...">
+                        <button class="search-button" id="semantic-dense-search-btn">Search</button>
+                        <div class="code-display" id="semantic-dense-code-display">
+                            <div class="code-section">
+                                <div class="code-title">Elasticsearch Dense Vector Query (E5)</div>
+                                <div class="code-content" id="semantic-dense-es-query-display">
+                                    <em>Execute a search to see the Elasticsearch dense vector query</em>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="results-area" id="semantic-dense-results">
+                            <p>Dense vector semantic search results will appear here...</p>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div id="hybrid" class="tab-content">
-                <div class="search-container">
-                    <div class="description">
-                        Combining keyword matching with semantic understanding
+                <button class="code-toggle-btn" id="hybrid-code-toggle" onclick="toggleHybridCodeView()">&lt;code&gt;</button>
+                <div class="description">
+                    Hybrid search using RRF to combine term-based and dense vector semantic search
+                </div>
+                <div class="search-with-facets">
+                    <div class="facets-sidebar">
+                        <div class="facets-title">Filter by Play</div>
+                        <div class="facet-group" id="hybrid-play-facets">
+                            <div class="loading">Loading plays...</div>
+                        </div>
                     </div>
-                    <input type="text" class="search-box" placeholder="Enter your query...">
-                    <button class="search-button">Search</button>
-                    <div class="results-area">
-                        <p>Hybrid search results will appear here...</p>
+                    <div class="search-content">
+                        <input type="text" class="search-box" id="hybrid-search-box" placeholder="Enter your search query...">
+                        <button class="search-button" id="hybrid-search-btn">Search</button>
+                        <div class="code-display" id="hybrid-code-display">
+                            <div class="code-section">
+                                <div class="code-title">Elasticsearch Hybrid Query (RRF)</div>
+                                <div class="code-content" id="hybrid-es-query-display">
+                                    <em>Execute a search to see the Elasticsearch RRF query</em>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="results-area" id="hybrid-results">
+                            <p>Hybrid search results will appear here...</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -449,6 +515,10 @@
     </div>
 
     <script>
+        let semanticSparseFacetsLoaded = false;
+        let semanticDenseFacetsLoaded = false;
+        let hybridFacetsLoaded = false;
+        
         function openTab(evt, tabName) {
             var i, tabcontent, tabbuttons;
             
@@ -467,6 +537,24 @@
             // Show the selected tab and mark button as active
             document.getElementById(tabName).classList.add("active");
             evt.currentTarget.classList.add("active");
+            
+            // Load facets for semantic sparse search when tab is opened
+            if (tabName === 'semantic-sparse' && !semanticSparseFacetsLoaded) {
+                performSemanticSparseSearch();
+                semanticSparseFacetsLoaded = true;
+            }
+            
+            // Load facets for semantic dense search when tab is opened
+            if (tabName === 'semantic-dense' && !semanticDenseFacetsLoaded) {
+                performSemanticDenseSearch();
+                semanticDenseFacetsLoaded = true;
+            }
+            
+            // Load facets for hybrid search when tab is opened
+            if (tabName === 'hybrid' && !hybridFacetsLoaded) {
+                performHybridSearch();
+                hybridFacetsLoaded = true;
+            }
         }
 
         // Search functionality
@@ -643,8 +731,14 @@
             // Load initial facets
             performSearch();
             
-            // Other search buttons (semantic, hybrid) - placeholder functionality
-            const otherSearchButtons = document.querySelectorAll('.search-button:not(#term-search-btn)');
+            // Setup semantic search
+            // Semantic search setup handled in semantic-search.js
+            
+            // Setup hybrid search
+            setupHybridSearch();
+            
+            // Other search buttons (chat) - placeholder functionality  
+            const otherSearchButtons = document.querySelectorAll('.search-button:not(#term-search-btn):not(#semantic-search-btn):not(#hybrid-search-btn)');
             
             otherSearchButtons.forEach(button => {
                 button.addEventListener('click', function() {
@@ -686,6 +780,166 @@
         // Function to open document detail page
         function openDocument(lineId) {
             window.location.href = `/document/${lineId}`;
+        }
+
+        // Semantic Search variables are now in semantic-search.js
+
+        // Semantic functions moved to semantic-search.js
+
+        // performSemanticSparseSearch and performSemanticDenseSearch moved to semantic-search.js
+
+        // All semantic search functions moved to semantic-search.js
+
+        // Hybrid Search Functions
+        let selectedHybridPlays = [];
+        let allHybridPlays = [];
+        let lastHybridQuery = null;
+
+        function toggleHybridCodeView() {
+            const codeDisplay = document.getElementById('hybrid-code-display');
+            const button = document.getElementById('hybrid-code-toggle');
+            
+            codeDisplay.classList.toggle('visible');
+            button.classList.toggle('active');
+        }
+
+        function updateHybridCodeDisplay(searchRequest, esQuery) {
+            const queryDisplay = document.getElementById('hybrid-es-query-display');
+            
+            if (esQuery) {
+                queryDisplay.innerHTML = formatJSON(esQuery);
+            } else if (searchRequest) {
+                queryDisplay.innerHTML = formatJSON(searchRequest);
+            }
+        }
+
+        async function performHybridSearch() {
+            const query = document.getElementById('hybrid-search-box').value.trim();
+            const resultsArea = document.getElementById('hybrid-results');
+            
+            resultsArea.innerHTML = '<div class="loading">Performing hybrid search...</div>';
+            
+            try {
+                const searchRequest = {
+                    query: query,
+                    selected_plays: selectedHybridPlays,
+                    from: 0,
+                    size: 20
+                };
+                
+                lastHybridQuery = searchRequest;
+                updateHybridCodeDisplay(searchRequest);
+                
+                const response = await fetch('/api/search-hybrid', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(searchRequest)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayHybridResults(data);
+                    updateHybridFacets(data.aggregations.plays);
+                    updateHybridCodeDisplay(searchRequest, data.elasticsearch_query);
+                } else {
+                    resultsArea.innerHTML = `<p>Error: ${data.error}</p>`;
+                }
+            } catch (error) {
+                resultsArea.innerHTML = `<p>Error: ${error.message}</p>`;
+            }
+        }
+
+        function displayHybridResults(data) {
+            const resultsArea = document.getElementById('hybrid-results');
+            
+            if (data.total === 0) {
+                resultsArea.innerHTML = '<p>No hybrid results found.</p>';
+                return;
+            }
+            
+            let html = `<div class="search-stats">Found ${data.total.toLocaleString()} hybrid matches (RRF)</div>`;
+            
+            data.hits.forEach(hit => {
+                const highlightText = hit.highlight && hit.highlight.length > 0 ? hit.highlight[0] : hit.text_entry;
+                html += `
+                    <div class="search-result" onclick="openDocument(${hit.line_id})" title="Click to view document">
+                        <div class="result-meta">
+                            <strong>${hit.play_name}</strong>
+                            ${hit.speaker ? ` - ${hit.speaker}` : ''}
+                            (${hit.type})
+                            <span style="color: #888; font-size: 11px; margin-left: 10px;">🔍 Click to view document</span>
+                        </div>
+                        <div class="result-text">${highlightText}</div>
+                    </div>
+                `;
+            });
+            
+            resultsArea.innerHTML = html;
+        }
+
+        function updateHybridFacets(plays) {
+            allHybridPlays = plays;
+            const facetsContainer = document.getElementById('hybrid-play-facets');
+            
+            if (!facetsContainer) return;
+            
+            if (plays.length === 0) {
+                facetsContainer.innerHTML = '<p>No plays found</p>';
+                return;
+            }
+            
+            let html = '';
+            plays.forEach(play => {
+                const checked = selectedHybridPlays.includes(play.name) ? 'checked' : '';
+                html += `
+                    <div class="facet-item" onclick="toggleHybridPlay('${play.name}')">
+                        <input type="checkbox" class="facet-checkbox" ${checked} 
+                               onchange="toggleHybridPlay('${play.name}')" onclick="event.stopPropagation()">
+                        <span class="facet-label">${play.name}</span>
+                        <span class="facet-count">(${play.count.toLocaleString()})</span>
+                    </div>
+                `;
+            });
+            
+            facetsContainer.innerHTML = html;
+        }
+
+        function toggleHybridPlay(playName) {
+            const index = selectedHybridPlays.indexOf(playName);
+            if (index > -1) {
+                selectedHybridPlays.splice(index, 1);
+            } else {
+                selectedHybridPlays.push(playName);
+            }
+            
+            // Update checkbox state
+            const checkbox = event.target.type === 'checkbox' ? event.target : event.currentTarget.querySelector('.facet-checkbox');
+            if (checkbox) {
+                checkbox.checked = selectedHybridPlays.includes(playName);
+            }
+            
+            // Perform new search with updated filters
+            performHybridSearch();
+        }
+
+        function setupHybridSearch() {
+            const hybridSearchBtn = document.getElementById('hybrid-search-btn');
+            const hybridSearchBox = document.getElementById('hybrid-search-box');
+            
+            if (hybridSearchBtn) {
+                hybridSearchBtn.addEventListener('click', performHybridSearch);
+            }
+            
+            if (hybridSearchBox) {
+                hybridSearchBox.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        performHybridSearch();
+                    }
+                });
+            }
         }
     </script>
 </body>
