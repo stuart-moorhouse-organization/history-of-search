@@ -570,12 +570,12 @@
             data.hits.forEach(hit => {
                 const highlightText = hit.highlight && hit.highlight.length > 0 ? hit.highlight[0] : hit.text_entry;
                 html += `
-                    <div class="search-result" onclick="openDocument(${hit.line_id})" title="Click to view full scene">
+                    <div class="search-result" onclick="openDocument(${hit.line_id})" title="Click to view document">
                         <div class="result-meta">
                             <strong>${hit.play_name}</strong>
                             ${hit.speaker ? ` - ${hit.speaker}` : ''}
                             (${hit.type})
-                            <span style="color: #888; font-size: 11px; margin-left: 10px;">📖 Click to view scene</span>
+                            <span style="color: #888; font-size: 11px; margin-left: 10px;">🔍 Click to view document</span>
                         </div>
                         <div class="result-text">${highlightText}</div>
                     </div>
