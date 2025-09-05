@@ -59,9 +59,12 @@ def create_index_mapping(es: Elasticsearch) -> None:
         "settings": {
             "analysis": {
                 "analyzer": {
-                    "english_no_stop": {
-                        "type": "english",
-                        "stopwords": "_none_"
+                    "phrase_search": {
+                        "tokenizer": "standard",
+                        "filter": [
+                            "lowercase",
+                            "asciifolding"
+                        ]
                     }
                 }
             }
@@ -76,7 +79,7 @@ def create_index_mapping(es: Elasticsearch) -> None:
                 "speaker": {"type": "keyword"},
                 "text_entry": {
                     "type": "text",
-                    "analyzer": "english_no_stop"
+                    "analyzer": "phrase_search"
                 }
             }
         }

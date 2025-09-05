@@ -143,6 +143,14 @@
             background: #fff;
             border: 1px solid #e0e0e0;
             border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .search-result:hover {
+            border-color: #3498db;
+            box-shadow: 0 2px 8px rgba(52, 152, 219, 0.15);
+            transform: translateY(-1px);
         }
 
         .result-meta {
@@ -162,6 +170,12 @@
             border-radius: 3px;
         }
 
+        .code-content mark {
+            background: none;
+            color: inherit;
+            padding: 0;
+        }
+
         .search-stats {
             margin-bottom: 15px;
             color: #666;
@@ -172,6 +186,103 @@
             text-align: center;
             color: #666;
             font-style: italic;
+        }
+
+        .code-toggle-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background-color: #2c3e50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            z-index: 10;
+        }
+
+        .code-toggle-btn:hover {
+            background-color: #34495e;
+        }
+
+        .code-toggle-btn.active {
+            background-color: #3498db;
+        }
+
+        .code-display {
+            display: none;
+            margin-top: 20px;
+            background-color: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            font-family: 'Courier New', Monaco, monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            color: #d4d4d4;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .code-display.visible {
+            display: block;
+        }
+
+        .code-section {
+            margin-bottom: 20px;
+        }
+
+        .code-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .code-title {
+            color: #569cd6;
+            font-weight: bold;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 4px;
+        }
+
+        .code-content {
+            background-color: #252526;
+            padding: 12px;
+            border-radius: 4px;
+            border-left: 3px solid #007acc;
+        }
+
+        .json-key {
+            color: #9cdcfe;
+        }
+
+        .json-string {
+            color: #ce9178;
+        }
+
+        .json-number {
+            color: #b5cea8;
+        }
+
+        .json-boolean {
+            color: #569cd6;
+        }
+
+        .json-bracket {
+            color: #ffd700;
+            font-weight: bold;
+        }
+
+        .code-content {
+            white-space: pre;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            line-height: 1.6;
+        }
+
+        .tab-content {
+            position: relative;
         }
 
         .search-box {
@@ -265,8 +376,9 @@
             </div>
 
             <div id="term-based" class="tab-content active">
+                <button class="code-toggle-btn" id="code-toggle" onclick="toggleCodeView()">&lt;code&gt;</button>
                 <div class="description">
-                    Traditional keyword-based search using exact term matching
+                    Traditional keyword-based search using term matching
                 </div>
                 <div class="search-with-facets">
                     <div class="facets-sidebar">
@@ -278,6 +390,14 @@
                     <div class="search-content">
                         <input type="text" class="search-box" id="term-search-box" placeholder="Enter search terms...">
                         <button class="search-button" id="term-search-btn">Search</button>
+                        <div class="code-display" id="code-display">
+                            <div class="code-section">
+                                <div class="code-title">Elasticsearch Query</div>
+                                <div class="code-content" id="es-query-display">
+                                    <em>Execute a search to see the Elasticsearch query</em>
+                                </div>
+                            </div>
+                        </div>
                         <div class="results-area" id="term-results">
                             <p>Search results will appear here...</p>
                         </div>
@@ -352,6 +472,51 @@
         // Search functionality
         let selectedPlays = [];
         let allPlays = [];
+        let lastQuery = null;
+        let codeViewVisible = false;
+
+        function toggleCodeView() {
+            const codeDisplay = document.getElementById('code-display');
+            const toggleBtn = document.getElementById('code-toggle');
+            
+            codeViewVisible = !codeViewVisible;
+            
+            if (codeViewVisible) {
+                codeDisplay.classList.add('visible');
+                toggleBtn.classList.add('active');
+                toggleBtn.textContent = '</code>';
+            } else {
+                codeDisplay.classList.remove('visible');
+                toggleBtn.classList.remove('active');
+                toggleBtn.textContent = '<code>';
+            }
+        }
+
+        function formatJSON(obj) {
+            // First, stringify with proper indentation
+            const jsonString = JSON.stringify(obj, null, 4);
+            
+            // Add syntax highlighting while preserving formatting
+            return jsonString
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"([^"]+)":/g, '<span class="json-key">"$1"</span>:')
+                .replace(/: "([^"]*)"/g, ': <span class="json-string">"$1"</span>')
+                .replace(/: (\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
+                .replace(/: (true|false|null)/g, ': <span class="json-boolean">$1</span>')
+                .replace(/^(\s*)(\{|\}|\[|\])/gm, '$1<span class="json-bracket">$2</span>');
+        }
+
+        function updateCodeDisplay(searchRequest, elasticsearchQuery) {
+            const queryDisplay = document.getElementById('es-query-display');
+            
+            if (elasticsearchQuery) {
+                queryDisplay.innerHTML = formatJSON(elasticsearchQuery);
+            } else if (searchRequest) {
+                queryDisplay.innerHTML = formatJSON(searchRequest);
+            }
+        }
 
         async function performSearch() {
             const query = document.getElementById('term-search-box').value.trim();
@@ -360,17 +525,22 @@
             resultsArea.innerHTML = '<div class="loading">Searching...</div>';
             
             try {
+                const searchRequest = {
+                    query: query,
+                    selected_plays: selectedPlays,
+                    from: 0,
+                    size: 20
+                };
+                
+                lastQuery = searchRequest;
+                updateCodeDisplay(searchRequest);
+                
                 const response = await fetch('/api/search', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        query: query,
-                        selected_plays: selectedPlays,
-                        from: 0,
-                        size: 20
-                    })
+                    body: JSON.stringify(searchRequest)
                 });
                 
                 const data = await response.json();
@@ -378,6 +548,7 @@
                 if (response.ok) {
                     displayResults(data);
                     updateFacets(data.aggregations.plays);
+                    updateCodeDisplay(searchRequest, data.elasticsearch_query);
                 } else {
                     resultsArea.innerHTML = `<p>Error: ${data.error}</p>`;
                 }
@@ -399,11 +570,12 @@
             data.hits.forEach(hit => {
                 const highlightText = hit.highlight && hit.highlight.length > 0 ? hit.highlight[0] : hit.text_entry;
                 html += `
-                    <div class="search-result">
+                    <div class="search-result" onclick="openDocument(${hit.line_id})" title="Click to view full scene">
                         <div class="result-meta">
                             <strong>${hit.play_name}</strong>
                             ${hit.speaker ? ` - ${hit.speaker}` : ''}
                             (${hit.type})
+                            <span style="color: #888; font-size: 11px; margin-left: 10px;">📖 Click to view scene</span>
                         </div>
                         <div class="result-text">${highlightText}</div>
                     </div>
@@ -510,6 +682,11 @@
                 }
             });
         });
+        
+        // Function to open document detail page
+        function openDocument(lineId) {
+            window.location.href = `/document/${lineId}`;
+        }
     </script>
 </body>
 </html>

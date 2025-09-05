@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ line.play_name }} - History of Search</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Georgia', 'Times New Roman', serif;
+            background-color: #f9f7f4;
+            color: #2c1810;
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #8b4513 0%, #5d2e0a 100%);
+            color: #f5f5dc;
+            padding: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header-content {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .back-button {
+            background-color: rgba(245, 245, 220, 0.2);
+            color: #f5f5dc;
+            border: 2px solid #f5f5dc;
+            padding: 10px 20px;
+            border-radius: 25px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .back-button:hover {
+            background-color: #f5f5dc;
+            color: #8b4513;
+        }
+
+        .back-arrow {
+            font-size: 16px;
+        }
+
+        .play-title {
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .current-line-highlight {
+            background: linear-gradient(120deg, #ffd700 0%, #ffed4a 100%);
+            border-left: 5px solid #d4af37;
+            margin: 30px 0;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);
+        }
+
+        .context-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .section-header {
+            background: #8b4513;
+            color: #f5f5dc;
+            padding: 15px 25px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .document-line {
+            padding: 15px 25px;
+            border-bottom: 1px solid #e8e6e0;
+            transition: background-color 0.2s;
+        }
+
+        .document-line:hover {
+            background-color: #faf9f6;
+        }
+
+        .document-line:last-child {
+            border-bottom: none;
+        }
+
+        .line-meta {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #8b7765;
+        }
+
+        .line-number {
+            background: #e8e6e0;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: bold;
+            min-width: 45px;
+            text-align: center;
+        }
+
+        .speaker {
+            font-weight: bold;
+            color: #8b4513;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .line-type {
+            background: #d3d3d3;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+
+        .line-type.act {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .line-type.scene {
+            background: #4ecdc4;
+            color: white;
+        }
+
+        .line-type.line {
+            background: #45b7d1;
+            color: white;
+        }
+
+        .line-text {
+            font-size: 16px;
+            font-style: italic;
+            color: #2c1810;
+            margin-left: 20px;
+        }
+
+        .current-line .line-text {
+            font-weight: bold;
+            font-size: 18px;
+            color: #8b4513;
+        }
+
+        .current-line .line-number {
+            background: #d4af37;
+            color: white;
+        }
+
+        .current-line .speaker {
+            color: #d4af37;
+        }
+
+        .scroll-indicator {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(139, 69, 19, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .scroll-indicator.visible {
+            opacity: 1;
+        }
+
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+
+            .play-title {
+                font-size: 24px;
+            }
+
+            .container {
+                padding: 20px 15px;
+            }
+
+            .line-meta {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <a href="javascript:history.back()" class="back-button">
+                <span class="back-arrow">←</span>
+                Back to Search
+            </a>
+            <h1 class="play-title">{{ line.play_name }}</h1>
+            <div></div> <!-- Spacer for flex layout -->
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="context-section">
+            <div class="section-header">
+                Scene Context (50 lines before and after)
+            </div>
+            
+            {% for doc in context %}
+                <div class="document-line {% if doc.is_current %}current-line current-line-highlight{% endif %}">
+                    <div class="line-meta">
+                        <span class="line-number">{{ doc.line_id }}</span>
+                        {% if doc.speaker %}
+                            <span class="speaker">{{ doc.speaker }}</span>
+                        {% endif %}
+                        <span class="line-type {{ doc.type }}">{{ doc.type }}</span>
+                    </div>
+                    <div class="line-text">{{ doc.text_entry }}</div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="scroll-indicator" id="scrollIndicator">
+        Current Line: {{ line.line_id }}
+    </div>
+
+    <script>
+        // Scroll to current line on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const currentLine = document.querySelector('.current-line');
+            if (currentLine) {
+                // Smooth scroll to current line with some offset
+                setTimeout(() => {
+                    const headerHeight = document.querySelector('.header').offsetHeight;
+                    const elementTop = currentLine.offsetTop - headerHeight - 20;
+                    window.scrollTo({
+                        top: elementTop,
+                        behavior: 'smooth'
+                    });
+                }, 100);
+            }
+
+            // Show/hide scroll indicator
+            const indicator = document.getElementById('scrollIndicator');
+            let timeout;
+
+            function showIndicator() {
+                indicator.classList.add('visible');
+                clearTimeout(timeout);
+                timeout = setTimeout(() => {
+                    indicator.classList.remove('visible');
+                }, 2000);
+            }
+
+            window.addEventListener('scroll', showIndicator);
+            showIndicator(); // Show initially
+        });
+
+        // Enhanced back navigation
+        function goBack() {
+            if (document.referrer.includes(window.location.hostname)) {
+                history.back();
+            } else {
+                window.location.href = '/';
+            }
+        }
+    </script>
+</body>
+</html>

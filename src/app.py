@@ -39,5 +39,29 @@ def search():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/document/<int:line_id>')
+def document_detail(line_id):
+    """Display full document/scene context for a specific line."""
+    if not search_backend:
+        return render_template('error.html', error="Search backend not available"), 503
+    
+    try:
+        # Get the specific line
+        line_result = search_backend.get_document_by_line_id(line_id)
+        if not line_result:
+            return render_template('error.html', error="Document not found"), 404
+        
+        # Get the full scene/act context
+        context_results = search_backend.get_document_context(
+            play_name=line_result['play_name'],
+            line_id=line_id
+        )
+        
+        return render_template('document_detail.html', 
+                             line=line_result,
+                             context=context_results)
+    except Exception as e:
+        return render_template('error.html', error=str(e)), 500
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

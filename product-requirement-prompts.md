@@ -6,8 +6,7 @@ This file contains the requirements for your project. Fill out each section with
 
 ```
 # What is the main goal of this project? Be specific and concise.
-# Example: "Build a REST API for managing customer orders with authentication"
-
+A Flask web app consistenting of 4 single-page web apps to show different search experiences. The 4 apps should be navigated by tabs. 
 
 
 ```
@@ -16,10 +15,14 @@ This file contains the requirements for your project. Fill out each section with
 
 ```
 # Describe what the project should do in detail. List key features and functionality.
-# Example: "- User registration and JWT authentication
-#          - CRUD operations for orders
-#          - Email notifications for order status changes"
+MVP: 
 
+A locally hosted Flask app that exposes a single-page web app with four tabs. The Heading of each tabs is: 
+
+1) term-based search
+2) semantic-search
+3) hybrid-search
+4) chat
 
 
 ```

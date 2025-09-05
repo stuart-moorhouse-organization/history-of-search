@@ -52,11 +52,50 @@ class SearchBackend:
         # Add text search if query provided
         if query:
             must_clauses.append({
-                "match": {
-                    "text_entry": {
-                        "query": query,
-                        "operator": "or"
-                    }
+                "bool": {
+                    "should": [
+                        # Exact phrase match gets highest score
+                        {
+                            "match_phrase": {
+                                "text_entry": {
+                                    "query": query,
+                                    "boost": 10
+                                }
+                            }
+                        },
+                        # Phrase with some flexibility 
+                        {
+                            "match_phrase": {
+                                "text_entry": {
+                                    "query": query,
+                                    "slop": 3,
+                                    "boost": 5
+                                }
+                            }
+                        },
+                        # Multi-match for partial matches
+                        {
+                            "multi_match": {
+                                "query": query,
+                                "fields": ["text_entry"],
+                                "type": "phrase",
+                                "slop": 2,
+                                "boost": 2
+                            }
+                        },
+                        # Individual terms (fallback with partial matching)
+                        {
+                            "match": {
+                                "text_entry": {
+                                    "query": query,
+                                    "operator": "or",
+                                    "minimum_should_match": "60%",
+                                    "boost": 1
+                                }
+                            }
+                        }
+                    ],
+                    "minimum_should_match": 1
                 }
             })
         
@@ -113,7 +152,8 @@ class SearchBackend:
             "hits": [],
             "aggregations": {
                 "plays": []
-            }
+            },
+            "elasticsearch_query": search_body  # Include the actual query used
         }
         
         # Process hits
@@ -137,3 +177,73 @@ class SearchBackend:
             })
         
         return results
+    
+    def get_document_by_line_id(self, line_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific document by line ID.
+        
+        Args:
+            line_id: The line ID to retrieve
+            
+        Returns:
+            Document data or None if not found
+        """
+        try:
+            response = self.es.search(
+                index="shakespeare",
+                body={
+                    "query": {
+                        "term": {
+                            "line_id": line_id
+                        }
+                    },
+                    "size": 1
+                }
+            )
+            
+            if response["hits"]["total"]["value"] > 0:
+                hit = response["hits"]["hits"][0]
+                return hit["_source"]
+            return None
+        except Exception:
+            return None
+    
+    def get_document_context(self, play_name: str, line_id: int, context_size: int = 50) -> List[Dict[str, Any]]:
+        """
+        Get surrounding context for a document (previous and next lines in the same play).
+        
+        Args:
+            play_name: Name of the play
+            line_id: Center line ID
+            context_size: Number of lines before and after to include
+            
+        Returns:
+            List of documents in order
+        """
+        try:
+            response = self.es.search(
+                index="shakespeare",
+                body={
+                    "query": {
+                        "bool": {
+                            "must": [
+                                {"term": {"play_name": play_name}},
+                                {"range": {"line_id": {"gte": max(1, line_id - context_size), "lte": line_id + context_size}}}
+                            ]
+                        }
+                    },
+                    "sort": [{"line_id": {"order": "asc"}}],
+                    "size": context_size * 2 + 1,
+                    "_source": ["play_name", "speaker", "text_entry", "line_id", "type"]
+                }
+            )
+            
+            results = []
+            for hit in response["hits"]["hits"]:
+                source = hit["_source"]
+                source["is_current"] = source["line_id"] == line_id
+                results.append(source)
+            
+            return results
+        except Exception:
+            return []
