@@ -7,14 +7,18 @@ function toggleSemanticSparseCodeView() {
     const codeDisplay = document.getElementById('semantic-sparse-code-display');
     const toggleBtn = document.getElementById('semantic-sparse-code-toggle');
     
+    if (!codeDisplay || !toggleBtn) return;
+    
     semanticSparseCodeViewVisible = !semanticSparseCodeViewVisible;
     
     if (semanticSparseCodeViewVisible) {
-        codeDisplay.style.display = 'block';
-        toggleBtn.style.background = '#3498db';
+        codeDisplay.classList.add('visible');
+        toggleBtn.classList.add('active');
+        toggleBtn.textContent = '</code>';
     } else {
-        codeDisplay.style.display = 'none';
-        toggleBtn.style.background = '#2c3e50';
+        codeDisplay.classList.remove('visible');
+        toggleBtn.classList.remove('active');
+        toggleBtn.textContent = '<code>';
     }
 }
 
@@ -33,7 +37,7 @@ async function performSemanticSparseSearch() {
         };
         
         lastSemanticSparseQuery = searchRequest;
-        updateSemanticSparseCodeDisplay(searchRequest);
+        updateSemanticSparseCodeDisplay(searchRequest, null, null);
         
         const response = await fetch('/api/search-semantic-sparse', {
             method: 'POST',
@@ -48,7 +52,7 @@ async function performSemanticSparseSearch() {
         if (response.ok) {
             displaySemanticSparseResults(data);
             updateSemanticSparseFacets(data.aggregations.plays);
-            updateSemanticSparseCodeDisplay(searchRequest, data.elasticsearch_query);
+            updateSemanticSparseCodeDisplay(searchRequest, data.elasticsearch_query, data.first_hit_embedding);
         } else {
             resultsArea.innerHTML = `<p>Error: ${data.error}</p>`;
         }
@@ -61,21 +65,23 @@ function displaySemanticSparseResults(data) {
     const resultsArea = document.getElementById('semantic-sparse-results');
     
     if (data.total === 0) {
-        resultsArea.innerHTML = '<p>No sparse vector matches found.</p>';
+        resultsArea.innerHTML = '<p>No results found.</p>';
         return;
     }
     
-    let html = `<div class="search-stats">Found ${data.total.toLocaleString()} sparse vector matches</div>`;
+    let html = `<div class="search-stats">Found ${data.total.toLocaleString()} results</div>`;
     
     data.hits.forEach(hit => {
         const highlightText = hit.highlight && hit.highlight.length > 0 ? hit.highlight[0] : hit.text_entry;
         html += `
-            <div class="search-result">
-                <a href="/document/${hit.line_id}" class="result-link">
-                    <div class="result-play">${hit.play_name}</div>
-                    <div class="result-speaker">${hit.speaker || 'Narrative'}</div>
-                    <div class="result-text">${highlightText}</div>
-                </a>
+            <div class="search-result" onclick="openDocument(${hit.line_id})" title="Click to view document">
+                <div class="result-meta">
+                    <strong>${hit.play_name}</strong>
+                    ${hit.speaker ? ` - ${hit.speaker}` : ''}
+                    (${hit.type})
+                    <span style="color: #888; font-size: 11px; margin-left: 10px;">🔍 Click to view document</span>
+                </div>
+                <div class="result-text">${highlightText}</div>
             </div>
         `;
     });
@@ -116,10 +122,42 @@ function toggleSemanticSparsePlay(playName) {
     performSemanticSparseSearch();
 }
 
-function updateSemanticSparseCodeDisplay(request, esQuery) {
+function updateSemanticSparseCodeDisplay(request, esQuery, firstHitEmbedding) {
     const codeElement = document.getElementById('semantic-sparse-es-query-display');
-    if (esQuery) {
-        codeElement.innerHTML = `<pre>${JSON.stringify(esQuery, null, 2)}</pre>`;
+    if (codeElement) {
+        let displayContent = '';
+        
+        // Display the Elasticsearch query
+        if (esQuery) {
+            displayContent += '<div style="margin-bottom: 20px;"><strong>Elasticsearch Query:</strong></div>';
+            if (typeof formatJSON === 'function') {
+                displayContent += formatJSON(esQuery);
+            } else {
+                displayContent += `<pre>${JSON.stringify(esQuery, null, 2)}</pre>`;
+            }
+        }
+        
+        // Display the first hit's embedding if available
+        if (firstHitEmbedding) {
+            displayContent += '<div style="margin-top: 30px; margin-bottom: 20px;"><strong>First Result\'s ELSER Embedding (text_entry_embedding):</strong></div>';
+            displayContent += '<div style="max-height: 300px; overflow-y: auto; background: #f5f5f5; padding: 10px; border-radius: 4px; border: 1px solid #ddd;">';
+            
+            // Sort the embedding tokens by weight (descending) and show top tokens
+            const tokens = Object.entries(firstHitEmbedding)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 50); // Show top 50 tokens
+            
+            displayContent += '<pre style="margin: 0; color: #1a1a1a; font-weight: 500; font-size: 13px; line-height: 1.6;">{';
+            tokens.forEach(([token, weight], index) => {
+                displayContent += `\n  <span style="color: #0969da;">"${token}"</span>: <span style="color: #d1242f; font-weight: bold;">${weight.toFixed(6)}</span>${index < tokens.length - 1 ? ',' : ''}`;
+            });
+            if (Object.keys(firstHitEmbedding).length > 50) {
+                displayContent += '\n  <span style="color: #6e7781; font-style: italic;">... (and ' + (Object.keys(firstHitEmbedding).length - 50) + ' more tokens)</span>';
+            }
+            displayContent += '\n}</pre></div>';
+        }
+        
+        codeElement.innerHTML = displayContent;
     }
 }
 
@@ -132,14 +170,18 @@ function toggleSemanticDenseCodeView() {
     const codeDisplay = document.getElementById('semantic-dense-code-display');
     const toggleBtn = document.getElementById('semantic-dense-code-toggle');
     
+    if (!codeDisplay || !toggleBtn) return;
+    
     semanticDenseCodeViewVisible = !semanticDenseCodeViewVisible;
     
     if (semanticDenseCodeViewVisible) {
-        codeDisplay.style.display = 'block';
-        toggleBtn.style.background = '#3498db';
+        codeDisplay.classList.add('visible');
+        toggleBtn.classList.add('active');
+        toggleBtn.textContent = '</code>';
     } else {
-        codeDisplay.style.display = 'none';
-        toggleBtn.style.background = '#2c3e50';
+        codeDisplay.classList.remove('visible');
+        toggleBtn.classList.remove('active');
+        toggleBtn.textContent = '<code>';
     }
 }
 
@@ -186,21 +228,23 @@ function displaySemanticDenseResults(data) {
     const resultsArea = document.getElementById('semantic-dense-results');
     
     if (data.total === 0) {
-        resultsArea.innerHTML = '<p>No dense vector matches found.</p>';
+        resultsArea.innerHTML = '<p>No results found.</p>';
         return;
     }
     
-    let html = `<div class="search-stats">Found ${data.total.toLocaleString()} dense vector matches</div>`;
+    let html = `<div class="search-stats">Found ${data.total.toLocaleString()} results</div>`;
     
     data.hits.forEach(hit => {
         const highlightText = hit.highlight && hit.highlight.length > 0 ? hit.highlight[0] : hit.text_entry;
         html += `
-            <div class="search-result">
-                <a href="/document/${hit.line_id}" class="result-link">
-                    <div class="result-play">${hit.play_name}</div>
-                    <div class="result-speaker">${hit.speaker || 'Narrative'}</div>
-                    <div class="result-text">${highlightText}</div>
-                </a>
+            <div class="search-result" onclick="openDocument(${hit.line_id})" title="Click to view document">
+                <div class="result-meta">
+                    <strong>${hit.play_name}</strong>
+                    ${hit.speaker ? ` - ${hit.speaker}` : ''}
+                    (${hit.type})
+                    <span style="color: #888; font-size: 11px; margin-left: 10px;">🔍 Click to view document</span>
+                </div>
+                <div class="result-text">${highlightText}</div>
             </div>
         `;
     });
@@ -243,8 +287,21 @@ function toggleSemanticDensePlay(playName) {
 
 function updateSemanticDenseCodeDisplay(request, esQuery) {
     const codeElement = document.getElementById('semantic-dense-es-query-display');
-    if (esQuery) {
-        codeElement.innerHTML = `<pre>${JSON.stringify(esQuery, null, 2)}</pre>`;
+    if (codeElement) {
+        if (esQuery) {
+            // Use formatJSON if available, otherwise fallback to plain JSON
+            if (typeof formatJSON === 'function') {
+                codeElement.innerHTML = formatJSON(esQuery);
+            } else {
+                codeElement.innerHTML = `<pre>${JSON.stringify(esQuery, null, 2)}</pre>`;
+            }
+        } else if (request) {
+            if (typeof formatJSON === 'function') {
+                codeElement.innerHTML = formatJSON(request);
+            } else {
+                codeElement.innerHTML = `<pre>${JSON.stringify(request, null, 2)}</pre>`;
+            }
+        }
     }
 }
 

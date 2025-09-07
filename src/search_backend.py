@@ -278,7 +278,7 @@ class SearchBackend:
                 "pre_tags": ["<mark>"],
                 "post_tags": ["</mark>"]
             },
-            "_source": ["play_name", "speaker", "text_entry", "line_id", "type"]
+            "_source": ["play_name", "speaker", "text_entry", "line_id", "type", "text_entry_embedding"]
         }
         
         # Execute search on semantic index
@@ -294,11 +294,12 @@ class SearchBackend:
             "aggregations": {
                 "plays": []
             },
-            "elasticsearch_query": search_body  # Include the actual query used
+            "elasticsearch_query": search_body,  # Include the actual query used
+            "first_hit_embedding": None  # Will store the embedding from first result
         }
         
         # Process hits
-        for hit in response["hits"]["hits"]:
+        for i, hit in enumerate(response["hits"]["hits"]):
             source = hit["_source"]
             result = {
                 "play_name": source.get("play_name", ""),
@@ -308,6 +309,11 @@ class SearchBackend:
                 "type": source.get("type", ""),
                 "highlight": hit.get("highlight", {}).get("text_entry", [source.get("text_entry", "")])
             }
+            
+            # Store the embedding from the first hit for display
+            if i == 0 and "text_entry_embedding" in source:
+                results["first_hit_embedding"] = source["text_entry_embedding"]
+            
             results["hits"].append(result)
         
         # Process aggregations
