@@ -74,8 +74,13 @@ function initializeChat() {
                 }
             }
             
-            // Remove streaming class when done
+            // Remove streaming class and set final HTML content
             messageContent.classList.remove('streaming');
+            
+            // Set the final response as HTML (Claude formats quotes with <em> tags)
+            if (fullResponse) {
+                messageContent.innerHTML = fullResponse;
+            }
             
         } catch (error) {
             console.error('Error:', error);
@@ -100,7 +105,13 @@ function initializeChat() {
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content' + (streaming ? ' streaming' : '');
-        contentDiv.textContent = content;
+        
+        // For assistant messages, allow HTML (Claude will format quotes with <em> tags)
+        if (role === 'assistant' && content) {
+            contentDiv.innerHTML = content;
+        } else {
+            contentDiv.textContent = content;
+        }
         
         messageDiv.appendChild(roleDiv);
         messageDiv.appendChild(contentDiv);
@@ -110,6 +121,7 @@ function initializeChat() {
         
         return messageDiv;
     }
+    
     
     // Show typing indicator
     function showTypingIndicator() {

@@ -27,6 +27,20 @@ class SearchBackend:
         if not self.es.ping():
             raise ConnectionError("Could not connect to Elasticsearch")
     
+    def _get_min_word_count_filter(self):
+        """
+        Get a filter that excludes documents with 3 or fewer words.
+        Uses a regex pattern to match text with at least 4 words.
+        """
+        return {
+            "regexp": {
+                "text_entry": {
+                    "value": ".*\\s+.*\\s+.*\\s+.*",
+                    "case_insensitive": True
+                }
+            }
+        }
+    
     def search_shakespeare(
         self, 
         query: str, 
@@ -99,22 +113,27 @@ class SearchBackend:
                 }
             })
         
+        # Build filter clauses
+        filter_clauses = []
+        
         # Add play name filter if plays selected
         if selected_plays:
-            must_clauses.append({
+            filter_clauses.append({
                 "terms": {
                     "play_name": selected_plays
                 }
             })
         
+        # Add minimum word count filter - disabled
+        # filter_clauses.append(self._get_min_word_count_filter())
+        
         # Construct the search body
         search_body = {
             "query": {
                 "bool": {
-                    "must": must_clauses
+                    "must": must_clauses if must_clauses else [{"match_all": {}}],
+                    "filter": filter_clauses
                 }
-            } if must_clauses else {
-                "match_all": {}
             },
             "aggs": {
                 "plays": {
@@ -240,22 +259,27 @@ class SearchBackend:
                 }
             })
         
+        # Build filter clauses
+        filter_clauses = []
+        
         # Add play name filter if plays selected
         if selected_plays:
-            must_clauses.append({
+            filter_clauses.append({
                 "terms": {
                     "play_name": selected_plays
                 }
             })
         
+        # Add minimum word count filter - disabled
+        # filter_clauses.append(self._get_min_word_count_filter())
+        
         # Construct the search body
         search_body = {
             "query": {
                 "bool": {
-                    "must": must_clauses
+                    "must": must_clauses if must_clauses else [{"match_all": {}}],
+                    "filter": filter_clauses
                 }
-            } if must_clauses else {
-                "match_all": {}
             },
             "aggs": {
                 "plays": {
@@ -330,72 +354,109 @@ class SearchBackend:
         query: str, 
         selected_plays: Optional[List[str]] = None,
         from_: int = 0,
-        size: int = 20
+        size: int = 20,
+        k: int = 10,
+        similarity: float = 0.7
     ) -> Dict[str, Any]:
         """
-        Search Shakespeare texts using dense vector semantic search with E5.
+        Search Shakespeare texts using pure KNN dense vector search with E5.
         
         Args:
             query: Search query text
             selected_plays: List of play names to filter by
             from_: Starting position for pagination
             size: Number of results to return
+            k: Number of nearest neighbors to retrieve (default: 10)
+            similarity: Minimum cosine similarity score (default: 0.7)
             
         Returns:
             Search results with hits and aggregations
         """
-        # Build the query
-        must_clauses = []
+        # Build the KNN query
+        knn_clause = None
+        filter_clauses = []
         
-        # Add semantic (dense vector) search if query provided
+        # Add KNN search if query provided
         if query:
-            must_clauses.append({
-                "semantic": {
-                    "field": "text_entry_dense",
-                    "query": query
-                }
-            })
-        
-        # Add play name filter if plays selected
-        if selected_plays:
-            must_clauses.append({
-                "terms": {
-                    "play_name": selected_plays
-                }
-            })
-        
-        # Construct the search body
-        search_body = {
-            "query": {
-                "bool": {
-                    "must": must_clauses
-                }
-            } if must_clauses else {
-                "match_all": {}
-            },
-            "aggs": {
-                "plays": {
-                    "terms": {
-                        "field": "play_name",
-                        "size": 50,  # Get all plays
-                        "order": {"_key": "asc"}
-                    }
-                }
-            },
-            "from": from_,
-            "size": size,
-            "highlight": {
-                "fields": {
-                    "text_entry": {
-                        "fragment_size": 200,
-                        "number_of_fragments": 1
+            # Use pure KNN search with dense_vector field
+            knn_clause = {
+                "field": "text_entry_vector",  # Using the dense_vector field
+                "query_vector_builder": {
+                    "text_embedding": {
+                        "model_id": ".multilingual-e5-small-elasticsearch",
+                        "model_text": query
                     }
                 },
-                "pre_tags": ["<mark>"],
-                "post_tags": ["</mark>"]
-            },
-            "_source": ["play_name", "speaker", "text_entry", "line_id", "type"]
-        }
+                "k": k,
+                "num_candidates": min(k * 10, 100),  # More candidates for better results
+                "similarity": similarity  # Minimum cosine similarity threshold
+            }
+            
+            # Add filters for selected plays and word count
+            filters = []
+            if selected_plays:
+                filters.append({
+                    "terms": {
+                        "play_name": selected_plays
+                    }
+                })
+            # filters.append(self._get_min_word_count_filter())
+            
+            if filters:
+                knn_clause["filter"] = {
+                    "bool": {
+                        "must": filters
+                    }
+                }
+        
+        # If no query, fall back to match_all with filters
+        if not knn_clause:
+            # No KNN search, just return filtered results
+            if selected_plays:
+                filter_clauses.append({
+                    "terms": {
+                        "play_name": selected_plays
+                    }
+                })
+            # Add word count filter - disabled
+            # filter_clauses.append(self._get_min_word_count_filter())
+            
+            search_body = {
+                "query": {
+                    "bool": {
+                        "filter": filter_clauses
+                    }
+                } if filter_clauses else {"match_all": {}},
+                "aggs": {
+                    "plays": {
+                        "terms": {
+                            "field": "play_name",
+                            "size": 50,
+                            "order": {"_key": "asc"}
+                        }
+                    }
+                },
+                "from": from_,
+                "size": size,
+                "_source": ["play_name", "speaker", "text_entry", "line_id", "type"]
+            }
+        else:
+            # Use KNN search
+            search_body = {
+                "knn": knn_clause,
+                "aggs": {
+                    "plays": {
+                        "terms": {
+                            "field": "play_name",
+                            "size": 50,
+                            "order": {"_key": "asc"}
+                        }
+                    }
+                },
+                "from": from_,
+                "size": size,
+                "_source": ["play_name", "speaker", "text_entry", "line_id", "type"]
+            }
         
         # Execute search on semantic index
         response = self.es.search(
@@ -443,7 +504,7 @@ class SearchBackend:
         size: int = 20
     ) -> Dict[str, Any]:
         """
-        Hybrid search using RRF to combine term-based and semantic search.
+        Hybrid search using native Elasticsearch RRF to combine term-based and semantic search.
         
         Args:
             query: Search query text
@@ -454,159 +515,168 @@ class SearchBackend:
         Returns:
             Search results with hits and aggregations
         """
-        # Build the RRF retriever query
-        retrievers = []
-        
-        if query:
-            # Add standard retriever for term-based search
-            standard_query = {
+        if not query:
+            # If no query, just return all results with optional filter
+            filters = []
+            if selected_plays:
+                filters.append({"terms": {"play_name": selected_plays}})
+            # filters.append(self._get_min_word_count_filter())
+            
+            filter_query = {
                 "bool": {
-                    "should": [
-                        # Exact phrase match gets highest score
-                        {
-                            "match_phrase": {
-                                "text_entry": {
-                                    "query": query,
-                                    "boost": 10
-                                }
-                            }
-                        },
-                        # Phrase with some flexibility
-                        {
-                            "match_phrase": {
-                                "text_entry": {
-                                    "query": query,
-                                    "slop": 3,
-                                    "boost": 5
-                                }
-                            }
-                        },
-                        # Individual terms
-                        {
-                            "match": {
-                                "text_entry": {
-                                    "query": query,
-                                    "operator": "or",
-                                    "minimum_should_match": "60%",
-                                    "boost": 1
-                                }
-                            }
+                    "must": filters
+                }
+            } if filters else {"match_all": {}}
+            
+            search_body = {
+                "query": filter_query,
+                "aggs": {
+                    "plays": {
+                        "terms": {
+                            "field": "play_name",
+                            "size": 50,
+                            "order": {"_key": "asc"}
                         }
-                    ],
-                    "minimum_should_match": 1
+                    }
+                },
+                "from": from_,
+                "size": size,
+                "_source": ["play_name", "speaker", "text_entry", "line_id", "type"]
+            }
+            
+            response = self.es.search(
+                index="shakespeare-semantic",
+                body=search_body
+            )
+        else:
+            # Build RRF query with retrievers
+            retrievers = []
+            
+            # Term-based retriever using match_phrase
+            term_based_query = {
+                "match_phrase": {
+                    "text_entry": {
+                        "query": query
+                    }
                 }
             }
             
-            # Apply play filter to standard retriever if needed
+            # Apply play filter and word count filter if needed
+            filters = []
             if selected_plays:
-                standard_query = {
+                filters.append({"terms": {"play_name": selected_plays}})
+            # filters.append(self._get_min_word_count_filter())
+            
+            if filters:
+                term_based_query = {
                     "bool": {
-                        "must": [standard_query],
-                        "filter": [{"terms": {"play_name": selected_plays}}]
+                        "must": term_based_query,
+                        "filter": {
+                            "bool": {
+                                "must": filters
+                            }
+                        }
                     }
                 }
             
             retrievers.append({
                 "standard": {
-                    "query": standard_query
+                    "query": term_based_query
                 }
             })
             
-            # Add semantic retriever if semantic index exists
-            try:
-                # Check if semantic index exists
-                if self.es.indices.exists(index="shakespeare-semantic"):
-                    semantic_query = {
-                        "semantic": {
-                            "field": "semantic_text",
-                            "query": query
-                        }
-                    }
-                    
-                    # Apply play filter to semantic query if needed
-                    if selected_plays:
-                        semantic_query = {
+            # Semantic retriever using semantic_text field
+            semantic_query = {
+                "semantic": {
+                    "field": "text_entry_dense",
+                    "query": query
+                }
+            }
+            
+            # Apply play filter and word count filter if needed
+            filters = []
+            if selected_plays:
+                filters.append({"terms": {"play_name": selected_plays}})
+            # filters.append(self._get_min_word_count_filter())
+            
+            if filters:
+                semantic_query = {
+                    "bool": {
+                        "must": semantic_query,
+                        "filter": {
                             "bool": {
-                                "must": [semantic_query],
-                                "filter": [{"terms": {"play_name": selected_plays}}]
+                                "must": filters
                             }
                         }
-                    
-                    # For semantic retriever, we need to specify the index
-                    # Since RRF needs to work across indices, we'll use a different approach
-                    # We'll execute both searches and combine manually
-                    pass  # Will implement manual RRF below
-            except:
-                pass
-        
-        # Since Elasticsearch Python client doesn't directly support retrievers API yet,
-        # we'll implement RRF manually by executing both searches and combining results
-        
-        # Execute term-based search
-        term_results = self.search_shakespeare(query, selected_plays, 0, 100)
-        
-        # Execute dense vector semantic search if index exists
-        semantic_results = None
-        try:
-            if self.es.indices.exists(index="shakespeare-semantic"):
-                semantic_results = self.search_shakespeare_semantic_dense(query, selected_plays, 0, 100)
-        except:
-            pass
-        
-        # Implement RRF manually
-        rrf_scores = {}
-        k = 60  # RRF constant
-        
-        # Score term-based results
-        for i, hit in enumerate(term_results["hits"]):
-            line_id = hit["line_id"]
-            rrf_scores[line_id] = rrf_scores.get(line_id, 0) + 1.0 / (i + 1 + k)
+                    }
+                }
             
-        # Score semantic results if available
-        if semantic_results:
-            for i, hit in enumerate(semantic_results["hits"]):
-                line_id = hit["line_id"]
-                rrf_scores[line_id] = rrf_scores.get(line_id, 0) + 1.0 / (i + 1 + k)
-        
-        # Sort by RRF score
-        sorted_line_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
-        
-        # Build result set
-        hits_by_id = {}
-        for hit in term_results["hits"]:
-            hits_by_id[hit["line_id"]] = hit
-        if semantic_results:
-            for hit in semantic_results["hits"]:
-                if hit["line_id"] not in hits_by_id:
-                    hits_by_id[hit["line_id"]] = hit
-        
-        # Get paginated results
-        paginated_ids = sorted_line_ids[from_:from_ + size]
-        paginated_hits = [hits_by_id[line_id] for line_id in paginated_ids if line_id in hits_by_id]
-        
-        # Build the response
-        results = {
-            "total": len(sorted_line_ids),
-            "hits": paginated_hits,
-            "aggregations": term_results["aggregations"],  # Use aggregations from term search
-            "elasticsearch_query": {
-                "description": "Hybrid search using Reciprocal Rank Fusion (RRF)",
-                "rrf": {
-                    "retrievers": [
-                        {"type": "standard", "index": "shakespeare"},
-                        {"type": "semantic_dense", "index": "shakespeare-semantic"} if semantic_results else None
-                    ],
-                    "rank_constant": k,
-                    "rank_window_size": 100
+            retrievers.append({
+                "standard": {
+                    "query": semantic_query
+                }
+            })
+            
+            # Build the search body with RRF
+            search_body = {
+                "retriever": {
+                    "rrf": {
+                        "retrievers": retrievers,
+                        "rank_constant": 60,
+                        "rank_window_size": 100
+                    }
                 },
-                "note": "This is a manual implementation of RRF combining term and dense semantic search"
+                "aggs": {
+                    "plays": {
+                        "terms": {
+                            "field": "play_name",
+                            "size": 50,
+                            "order": {"_key": "asc"}
+                        }
+                    }
+                },
+                "from": from_,
+                "size": size,
+                "_source": ["play_name", "speaker", "text_entry", "line_id", "type"]
             }
+            
+            # Execute search on semantic index
+            response = self.es.search(
+                index="shakespeare-semantic",
+                body=search_body
+            )
+        
+        # Process results
+        results = {
+            "total": response["hits"]["total"]["value"] if "total" in response["hits"] else len(response["hits"]["hits"]),
+            "hits": [],
+            "aggregations": {
+                "plays": []
+            },
+            "elasticsearch_query": search_body  # Include the actual query used
         }
         
-        # Filter out None retriever if semantic search wasn't used
-        results["elasticsearch_query"]["rrf"]["retrievers"] = [
-            r for r in results["elasticsearch_query"]["rrf"]["retrievers"] if r
-        ]
+        # Process hits
+        for hit in response["hits"]["hits"]:
+            source = hit["_source"]
+            result = {
+                "play_name": source.get("play_name", ""),
+                "speaker": source.get("speaker", ""),
+                "text_entry": source.get("text_entry", ""),
+                "line_id": source.get("line_id", 0),
+                "type": source.get("type", ""),
+                "score": hit.get("_score", 0),
+                "rank": hit.get("_rank", None)  # RRF adds _rank field
+            }
+            results["hits"].append(result)
+        
+        # Process aggregations if available
+        if "aggregations" in response and "plays" in response["aggregations"]:
+            for bucket in response["aggregations"]["plays"]["buckets"]:
+                results["aggregations"]["plays"].append({
+                    "name": bucket["key"],
+                    "count": bucket["doc_count"]
+                })
         
         return results
     

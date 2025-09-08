@@ -57,10 +57,17 @@ def create_dual_semantic_index_mapping(es: Elasticsearch) -> None:
                 "text_entry_embedding": {
                     "type": "sparse_vector"
                 },
-                # E5 dense vector field (semantic_text)
+                # E5 dense vector field (semantic_text) - for semantic query
                 "text_entry_dense": {
                     "type": "semantic_text",
                     "inference_id": ".multilingual-e5-small-elasticsearch"
+                },
+                # E5 dense vector field (dense_vector) - for KNN search
+                "text_entry_vector": {
+                    "type": "dense_vector",
+                    "dims": 384,  # E5 small model produces 384-dimensional vectors
+                    "index": True,
+                    "similarity": "cosine"
                 }
             }
         }
@@ -72,9 +79,10 @@ def create_dual_semantic_index_mapping(es: Elasticsearch) -> None:
         es.indices.delete(index=index_name)
     
     # Create new index with mapping
-    print(f"Creating {index_name} index with dual semantic mappings...")
+    print(f"Creating {index_name} index with triple semantic mappings...")
     print("- text_entry_embedding: sparse_vector (for ELSER)")
-    print("- text_entry_dense: semantic_text (for E5 multilingual)")
+    print("- text_entry_dense: semantic_text (for E5 multilingual semantic query)")
+    print("- text_entry_vector: dense_vector (for E5 multilingual KNN search)")
     es.indices.create(index=index_name, body=mapping)
 
 def create_dual_ingest_pipeline(es: Elasticsearch) -> None:
@@ -107,6 +115,26 @@ def create_dual_ingest_pipeline(es: Elasticsearch) -> None:
                         }
                     ]
                 }
+            },
+            # E5 processor for dense vectors (for KNN search)
+            {
+                "inference": {
+                    "model_id": ".multilingual-e5-small-elasticsearch",
+                    "input_output": [
+                        {
+                            "input_field": "text_entry",
+                            "output_field": "text_entry_vector"
+                        }
+                    ],
+                    "on_failure": [
+                        {
+                            "set": {
+                                "field": "_ingest.on_failure_message",
+                                "value": "E5 processing failed: {{_ingest.on_failure_message}}"
+                            }
+                        }
+                    ]
+                }
             }
         ]
     }
@@ -121,6 +149,7 @@ def create_dual_ingest_pipeline(es: Elasticsearch) -> None:
     es.ingest.put_pipeline(id="dual-semantic-pipeline", body=pipeline)
     print("Dual semantic ingest pipeline created successfully!")
     print("Note: E5 embeddings will be handled automatically by semantic_text field")
+    print("      E5 dense vectors will also be stored in text_entry_vector for KNN search")
 
 def reindex_with_dual_semantics(es: Elasticsearch) -> None:
     """
@@ -129,8 +158,8 @@ def reindex_with_dual_semantics(es: Elasticsearch) -> None:
     Args:
         es: Elasticsearch client
     """
-    print("Reindexing data with dual semantic embeddings...")
-    print("This will generate both ELSER sparse vectors and E5 dense embeddings...")
+    print("Reindexing data with triple semantic embeddings...")
+    print("This will generate ELSER sparse vectors, E5 semantic_text, and E5 dense vectors...")
     
     # Reindex with the ingest pipeline and copy text_entry to text_entry_dense
     reindex_body = {
@@ -333,10 +362,11 @@ def main():
         # Step 4: Verify both search types work
         verify_dual_semantic_search(es)
         
-        print("\n✅ Dual semantic Shakespeare index created successfully!")
+        print("\n✅ Triple semantic Shakespeare index created successfully!")
         print("You can now use:")
         print("1. Sparse vector search with text_entry_embedding field (ELSER)")
-        print("2. Dense vector search with text_entry_dense field (E5 multilingual)")
+        print("2. Semantic search with text_entry_dense field (E5 multilingual)")
+        print("3. KNN search with text_entry_vector field (E5 multilingual dense vectors)")
         
     except Exception as e:
         print(f"\nError during dual semantic index setup: {e}")

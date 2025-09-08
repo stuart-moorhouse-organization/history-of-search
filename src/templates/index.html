@@ -131,6 +131,24 @@
             border-color: #3498db;
             background: #f0f8ff;
         }
+
+        /* Style quotes in chat messages */
+        .chat-message .message-content {
+            position: relative;
+        }
+
+        /* Make text within quotes italic and slightly styled */
+        .chat-message .message-content em,
+        .chat-message .message-content i {
+            font-style: italic;
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        /* Style direct quotes (text within quotation marks) */
+        .chat-message .message-content::after {
+            content: "";
+        }
         
         .chat-input-container {
             display: flex;
@@ -432,6 +450,54 @@
             font-weight: bold;
         }
 
+        /* Python syntax highlighting */
+        .code-content pre {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            border: none;
+            font-family: 'Courier New', Monaco, monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+        }
+
+        .code-content code.python {
+            color: #d4d4d4;
+        }
+
+        /* Python comments */
+        .python-comment {
+            color: #6a9955;
+            font-style: italic;
+        }
+
+        /* Python keywords */
+        .python-keyword {
+            color: #569cd6;
+            font-weight: bold;
+        }
+
+        /* Python strings */
+        .python-string {
+            color: #ce9178;
+        }
+
+        /* Python functions */
+        .python-function {
+            color: #dcdcaa;
+        }
+
+        /* Python classes */
+        .python-class {
+            color: #4ec9b0;
+        }
+
+        /* Python numbers */
+        .python-number {
+            color: #b5cea8;
+        }
+
         .code-content {
             white-space: pre;
             font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
@@ -656,9 +722,145 @@
             </div>
 
             <div id="chat" class="tab-content">
+                <button class="code-toggle-btn" id="chat-code-toggle" onclick="toggleChatCodeView()">&lt;code&gt;</button>
                 <div class="search-container">
                     <div class="description">
                         Chat with a Shakespeare expert powered by Claude and RAG
+                    </div>
+                    <div class="code-display" id="chat-code-display">
+                        <div class="code-section">
+                            <div class="code-title">RAG Implementation - Python Code</div>
+                            <div class="code-content" id="chat-python-code-display">
+                                <pre><code class="python"># RAG Chatbot Implementation
+
+from langchain_anthropic import ChatAnthropic
+from elasticsearch import Elasticsearch
+
+class ShakespeareChatbot:
+    def __init__(self):
+        # Initialize Elasticsearch for semantic search
+        self.es = Elasticsearch(
+            cloud_id=os.getenv('ELASTIC_CLOUD_ID'),
+            api_key=os.getenv('ELASTIC_API_KEY')
+        )
+        
+        # Initialize Claude LLM
+        self.llm = ChatAnthropic(
+            model="claude-3-haiku-20240307",
+            temperature=0.7,
+            max_tokens=1000
+        )
+    
+    def search_shakespeare(self, query: str, size: int = 10):
+        """Search using hybrid RRF with sparse vectors and field boosting."""
+        search_body = {
+            "retriever": {
+                "rrf": {
+                    "retrievers": [
+                        # Sparse vector semantic search (ELSER)
+                        {
+                            "standard": {
+                                "query": {
+                                    "sparse_vector": {
+                                        "field": "text_entry_embedding",
+                                        "inference_id": ".elser-2-elasticsearch", 
+                                        "query": query
+                                    }
+                                }
+                            }
+                        },
+                        # Boosted term search on play_name and speaker
+                        {
+                            "standard": {
+                                "query": {
+                                    "bool": {
+                                        "should": [
+                                            {"match_phrase": {"text_entry": {"query": query, "boost": 1.0}}},
+                                            {"match": {"play_name": {"query": query, "boost": 3.0}}},
+                                            {"match": {"speaker": {"query": query, "boost": 5.0}}},
+                                            {"match": {"text_entry": {"query": query, "boost": 1.0}}}
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    ],
+                    "rank_constant": 60,
+                    "rank_window_size": 100
+                }
+            },
+            "size": size,
+            "_source": ["play_name", "speaker", "text_entry", "line_id", "type"]
+        }
+        
+        response = self.es.search(
+            index="shakespeare-semantic",
+            body=search_body
+        )
+        
+        # Extract relevant passages
+        results = []
+        for hit in response["hits"]["hits"]:
+            source = hit["_source"]
+            results.append({
+                "play_name": source.get("play_name", ""),
+                "speaker": source.get("speaker", ""),
+                "text": source.get("text_entry", ""),
+                "score": hit["_score"]
+            })
+        
+        return results
+    
+    def format_context(self, passages):
+        """Format retrieved passages into context for the LLM."""
+        context_parts = ["Here are relevant passages from Shakespeare's works:\\n"]
+        
+        for i, passage in enumerate(passages, 1):
+            context_parts.append(f"\\n[Passage {i}]")
+            context_parts.append(f"Play: {passage['play_name']}")
+            if passage['speaker']:
+                context_parts.append(f"Speaker: {passage['speaker']}")
+            context_parts.append(f"Text: {passage['text']}")
+            context_parts.append("---")
+        
+        return "\\n".join(context_parts)
+    
+    def chat(self, user_message: str, conversation_history=None):
+        """Process a chat message using RAG."""
+        # Step 1: Retrieve relevant passages from Shakespeare
+        passages = self.search_shakespeare(user_message)
+        context = self.format_context(passages)
+        
+        # Step 2: Build prompt with context
+        messages = [
+            SystemMessage(content=self.system_prompt),
+            HumanMessage(content=f"""
+Here are some passages from Shakespeare's works:
+
+{context}
+
+Question: {user_message}
+
+Please provide a natural, conversational response about Shakespeare's works 
+based on these passages. End with relevant direct quotes from the passages 
+above, introducing them naturally.
+""")
+        ]
+        
+        # Step 3: Generate response with Claude
+        response = self.llm.invoke(messages)
+        return response.content
+
+# RAG Process:
+# 1. User asks a question about Shakespeare
+# 2. Query is sent to Elasticsearch semantic search
+# 3. Most relevant passages are retrieved using E5 embeddings
+# 4. Passages are formatted as context
+# 5. Context + question sent to Claude LLM
+# 6. Claude generates conversational answer with quotes
+# 7. Response returned to user</code></pre>
+                            </div>
+                        </div>
                     </div>
                     <div class="chat-interface">
                         <div class="chat-messages" id="chat-messages">
@@ -962,6 +1164,14 @@
         function toggleHybridCodeView() {
             const codeDisplay = document.getElementById('hybrid-code-display');
             const button = document.getElementById('hybrid-code-toggle');
+            
+            codeDisplay.classList.toggle('visible');
+            button.classList.toggle('active');
+        }
+
+        function toggleChatCodeView() {
+            const codeDisplay = document.getElementById('chat-code-display');
+            const button = document.getElementById('chat-code-toggle');
             
             codeDisplay.classList.toggle('visible');
             button.classList.toggle('active');

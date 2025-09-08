@@ -154,8 +154,8 @@ def main():
     
     print("Connected to Elasticsearch successfully!")
     
-    # Path to shakespeare data file
-    shakespeare_file = "shakespeare.json"
+    # Path to cleaned shakespeare data file
+    shakespeare_file = "../shakespeare_cleaned.json"
     
     if not os.path.exists(shakespeare_file):
         raise FileNotFoundError(f"Shakespeare data file not found: {shakespeare_file}")

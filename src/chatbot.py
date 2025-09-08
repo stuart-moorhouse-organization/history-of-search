@@ -48,38 +48,107 @@ class ShakespeareChatbot:
         )
         
         # System prompt for Shakespeare expert
-        self.system_prompt = """You are a Shakespeare expert assistant. Your role is to answer questions about Shakespeare's works based on the provided context from his plays and sonnets.
+        self.system_prompt = """You are a knowledgeable and friendly Shakespeare enthusiast who loves to discuss the Bard's works in a natural, conversational way. Think of yourself as that friend who studied English literature and can share fascinating insights about Shakespeare's plays and characters.
+
+        Your style:
+        - Write in a warm, engaging, conversational tone as if chatting with a friend
+        - Share interesting observations and connections between themes, characters, or plays
+        - Be enthusiastic about Shakespeare's genius but not pretentious
+        - Use natural language - avoid overly academic jargon
+        - Make the plays feel alive and relevant to modern readers
 
         Guidelines:
-        1. Only answer questions related to Shakespeare's works
-        2. Base your answers on the provided context passages
-        3. If the context doesn't contain relevant information, say so
-        4. Always cite the specific play and speaker when referencing the text
-        5. Be conversational but authoritative
-        6. Keep answers concise but informative
-        7. If asked about non-Shakespeare topics, politely redirect to Shakespeare
-
-        You have access to the complete works of Shakespeare and should provide accurate, helpful responses."""
+        1. Focus only on Shakespeare's works - if asked about other topics, gently redirect
+        2. Base your insights on the provided context passages from the actual texts
+        3. Always end your response with relevant direct quotes from the passages, introduced naturally
+        4. When quoting, mention the play and speaker (e.g., "As Hamlet says..." or "In Macbeth, Lady Macbeth declares...")
+        5. If the context doesn't contain relevant information, say so honestly
+        6. Make Shakespeare accessible and interesting, not intimidating"""
         
         # Initialize conversation memory (will be stored in session)
         self.conversation_memory = []
     
-    def search_shakespeare(self, query: str, size: int = 5) -> List[Dict[str, Any]]:
+    def search_shakespeare(self, query: str, size: int = 10) -> List[Dict[str, Any]]:
         """
-        Search for relevant Shakespeare passages using semantic search.
+        Search for relevant Shakespeare passages using hybrid RRF search with sparse vectors and field boosting.
         
         Args:
             query: The search query
-            size: Number of results to return
+            size: Number of results to return (default: 10 for RAG)
             
         Returns:
             List of relevant passages with metadata
         """
+        # Build hybrid RRF search with sparse semantic + boosted term search
         search_body = {
-            "query": {
-                "semantic": {
-                    "field": "text_entry_dense",
-                    "query": query
+            "retriever": {
+                "rrf": {
+                    "retrievers": [
+                        # First retriever: Sparse vector semantic search (ELSER)
+                        {
+                            "standard": {
+                                "query": {
+                                    "sparse_vector": {
+                                        "field": "text_entry_embedding",
+                                        "inference_id": ".elser-2-elasticsearch", 
+                                        "query": query
+                                    }
+                                }
+                            }
+                        },
+                        # Second retriever: Boosted term search on play_name and speaker
+                        {
+                            "standard": {
+                                "query": {
+                                    "bool": {
+                                        "should": [
+                                            # Exact phrase match in text
+                                            {
+                                                "match_phrase": {
+                                                    "text_entry": {
+                                                        "query": query,
+                                                        "boost": 1.0
+                                                    }
+                                                }
+                                            },
+                                            # Boosted matches in play name
+                                            {
+                                                "match": {
+                                                    "play_name": {
+                                                        "query": query,
+                                                        "boost": 3.0
+                                                    }
+                                                }
+                                            },
+                                            # Highly boosted matches in speaker name
+                                            {
+                                                "match": {
+                                                    "speaker": {
+                                                        "query": query,
+                                                        "boost": 5.0
+                                                    }
+                                                }
+                                            },
+                                            # General text match
+                                            {
+                                                "match": {
+                                                    "text_entry": {
+                                                        "query": query,
+                                                        "operator": "or",
+                                                        "minimum_should_match": "60%",
+                                                        "boost": 1.0
+                                                    }
+                                                }
+                                            }
+                                        ],
+                                        "minimum_should_match": 1
+                                    }
+                                }
+                            }
+                        }
+                    ],
+                    "rank_constant": 60,
+                    "rank_window_size": 100
                 }
             },
             "size": size,
@@ -99,13 +168,14 @@ class ShakespeareChatbot:
                     "play_name": source.get("play_name", ""),
                     "speaker": source.get("speaker", ""),
                     "text": source.get("text_entry", ""),
-                    "score": hit["_score"]
+                    "score": hit.get("_score", 0),
+                    "rank": hit.get("_rank", None)
                 })
             
             return results
         except Exception as e:
-            print(f"Search error: {e}")
-            # Fallback to regular text search if semantic search fails
+            print(f"Hybrid search error: {e}")
+            # Fallback to regular text search if hybrid search fails
             return self.fallback_search(query, size)
     
     def fallback_search(self, query: str, size: int = 5) -> List[Dict[str, Any]]:
@@ -198,14 +268,21 @@ class ShakespeareChatbot:
                     messages.append(AIMessage(content=msg["content"]))
         
         # Create the prompt with context
-        prompt_template = """Based on the following context from Shakespeare's works, please answer the question.
+        prompt_template = """Here are some passages from Shakespeare's works that might help answer the question:
 
-Context:
 {context}
 
 Question: {question}
 
-Please provide a helpful and accurate answer based on the context provided. If the context doesn't contain relevant information, please say so."""
+Please provide a natural, conversational response about Shakespeare's works based on these passages. Share your insights as if you're having a friendly discussion about literature. 
+
+IMPORTANT: When you include ANY direct quotes from the passages, format them exactly like this:
+<em>"quote text here"</em> (Play Name Act.Scene.Line)
+
+For example:
+<em>"To be or not to be, that is the question"</em> (Hamlet 3.1.64)
+
+Cite ALL quotes throughout your response using this exact format - not just at the end. Every single quote should have its citation immediately following it. If these passages don't contain relevant information for the question, please say so."""
         
         # Add the current question with context
         current_prompt = prompt_template.format(
@@ -248,14 +325,21 @@ Please provide a helpful and accurate answer based on the context provided. If t
                     messages.append(AIMessage(content=msg["content"]))
         
         # Create the prompt with context
-        prompt_template = """Based on the following context from Shakespeare's works, please answer the question.
+        prompt_template = """Here are some passages from Shakespeare's works that might help answer the question:
 
-Context:
 {context}
 
 Question: {question}
 
-Please provide a helpful and accurate answer based on the context provided. If the context doesn't contain relevant information, please say so."""
+Please provide a natural, conversational response about Shakespeare's works based on these passages. Share your insights as if you're having a friendly discussion about literature. 
+
+IMPORTANT: When you include ANY direct quotes from the passages, format them exactly like this:
+<em>"quote text here"</em> (Play Name Act.Scene.Line)
+
+For example:
+<em>"To be or not to be, that is the question"</em> (Hamlet 3.1.64)
+
+Cite ALL quotes throughout your response using this exact format - not just at the end. Every single quote should have its citation immediately following it. If these passages don't contain relevant information for the question, please say so."""
         
         # Add the current question with context
         current_prompt = prompt_template.format(
